@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Any
 
 from config import LOG_DIR, ensure_runtime_dirs
+from config import EXTENDED_DATA_ENABLED
+from core.extended_fetch import fetch_extended_data
 from core.fetch import DataFetchError, get_market_data
 from core.market import classify_market
 from core.risk import detect_factor_risk
@@ -36,6 +38,69 @@ def _pct_change_text(value: float | None) -> str:
     if value is None:
         return "无历史数据"
     return f"{value}%"
+
+
+def _money_yi(value: float | int | None) -> str:
+    if value is None:
+        return "无数据"
+    return f"{float(value) / 100000000:.2f}亿"
+
+
+def _native_yi(value: float | int | None) -> str:
+    if value is None:
+        return "无数据"
+    return f"{float(value):.2f}亿"
+
+
+def _short_text(value: Any, limit: int = 34) -> str:
+    text = str(value) if value is not None else "无数据"
+    return text if len(text) <= limit else f"{text[:limit]}..."
+
+
+def _format_extended_lines(payload: dict[str, Any]) -> list[str]:
+    extended = payload.get("extended")
+    if not extended:
+        return ["未启用扩展数据"]
+
+    lines: list[str] = []
+    north = extended.get("northbound_flow") or {}
+    if north:
+        lines.append(
+            "北向资金: "
+            f"{north.get('trade_date', '最新')}, "
+            f"成交净买额={_native_yi(north.get('net_buy_amount'))}, 资金净流入={_native_yi(north.get('net_inflow'))}"
+        )
+
+    for code, item in extended.get("stocks", {}).items():
+        stock = payload["stocks"][code]
+        holding = item.get("holding") or {}
+        fund_flow = item.get("fund_flow") or {}
+        history = item.get("history") or {}
+        financial = item.get("financial") or {}
+        industry = item.get("industry") or {}
+        industry_flow = item.get("industry_fund_flow") or {}
+        lhb = item.get("lhb") or {}
+        news = item.get("news") or []
+        research = item.get("research") or []
+
+        latest_news = news[0].get("新闻标题") if news else "无新闻"
+        latest_research = research[0].get("报告名称") if research else "无研报"
+        metrics = financial.get("metrics") or {}
+        lines.append(
+            f"{stock['name']}({code}) 扩展: "
+            f"持仓{holding.get('quantity', 0)}股, 成本{holding.get('cost', 0)}, 盈亏{holding.get('profit_pct')}%; "
+            f"主力净流入{_money_yi(fund_flow.get('主力净流入-净额'))}; "
+            f"K线{history.get('trend')}, MA5={history.get('ma5')}, MA20={history.get('ma20')}; "
+            f"财报{financial.get('latest_period')}, 营收={_money_yi(metrics.get('营业总收入'))}, 归母净利={_money_yi(metrics.get('归母净利润'))}"
+        )
+        lines.append(
+            f"{stock['name']} 信息: "
+            f"新闻={_short_text(latest_news)}; 研报={_short_text(latest_research)}; "
+            f"龙虎榜最近={lhb.get('latest_date') or '无'}; "
+            f"行业={industry.get('板块名称') or '无'}, 行业涨跌={industry.get('涨跌幅')}%, "
+            f"行业主力净流入={_money_yi(industry_flow.get('今日主力净流入-净额'))}"
+        )
+    return lines
 
 
 def format_report(payload: dict[str, Any]) -> str:
@@ -88,6 +153,8 @@ def format_report(payload: dict[str, Any]) -> str:
         score_text = ", ".join(f"{name}={score}" for name, score in score_detail.items())
         reason_lines.append(f"{stocks[code]['name']}: {'; '.join(decision['reasons'])}; 评分明细: {score_text}")
 
+    extended_lines = _format_extended_lines(payload)
+
     return "\n".join(
         [
             "[市场状态]",
@@ -102,6 +169,8 @@ def format_report(payload: dict[str, Any]) -> str:
             risk["state"],
             "[交易建议]",
             *decision_lines,
+            "[扩展数据]",
+            *extended_lines,
             "[理由]",
             *reason_lines,
         ]
@@ -115,6 +184,7 @@ def run_analysis() -> dict[str, Any]:
 
     try:
         market_data = get_market_data()
+        extended = fetch_extended_data(market_data.stocks, market_data.trade_date) if EXTENDED_DATA_ENABLED else None
         previous_amount = get_previous_market_amount(market_data.trade_date)
         market = classify_market(market_data.indices, market_data.total_amount, previous_amount)
         stocks = analyze_stocks(
@@ -122,6 +192,9 @@ def run_analysis() -> dict[str, Any]:
             market_avg_pct=float(market["avg_pct_chg"]),
             market_state=str(market["state"]),
         )
+        if extended:
+            for code, item in extended["stocks"].items():
+                stocks[code]["holding"] = item["holding"]
         risk = detect_factor_risk(stocks, market_data.indices)
         decisions = make_decisions(stocks, str(market["state"]), str(risk["state"]))
 
@@ -132,6 +205,7 @@ def run_analysis() -> dict[str, Any]:
             "market": market,
             "indices": market_data.indices,
             "stocks": stocks,
+            "extended": extended,
             "risk": risk,
             "decisions": decisions,
         }

@@ -19,10 +19,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "601138": {
             "name": "工业富联",
             "factor": "科技",
+            "industry": "消费电子",
         },
         "002475": {
             "name": "立讯精密",
             "factor": "消费电子",
+            "industry": "消费电子",
         },
     },
     "index_codes": {
@@ -42,6 +44,25 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "webhook_url": "",
         "timeout_seconds": 10,
         "linux_wechat_target": "文件传输助手",
+    },
+    "portfolio": {
+        "cash": 0,
+        "positions": {
+            "601138": {
+                "quantity": 0,
+                "cost": 0,
+            },
+            "002475": {
+                "quantity": 0,
+                "cost": 0,
+            },
+        },
+    },
+    "extended_data": {
+        "enabled": True,
+        "history_days": 30,
+        "news_limit": 3,
+        "research_limit": 3,
     },
 }
 
@@ -95,6 +116,11 @@ LINUX_WECHAT_TARGET = os.getenv(
     "LINUX_WECHAT_TARGET",
     str(APP_CONFIG["notification"]["linux_wechat_target"]),
 )
+PORTFOLIO = APP_CONFIG["portfolio"]
+EXTENDED_DATA_ENABLED = _env_bool("EXTENDED_DATA_ENABLED", bool(APP_CONFIG["extended_data"]["enabled"]))
+HISTORY_DAYS = int(APP_CONFIG["extended_data"]["history_days"])
+NEWS_LIMIT = int(APP_CONFIG["extended_data"]["news_limit"])
+RESEARCH_LIMIT = int(APP_CONFIG["extended_data"]["research_limit"])
 
 
 def ensure_runtime_dirs() -> None:

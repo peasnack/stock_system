@@ -61,6 +61,24 @@ cp app_config.example.json app_config.json
 
 `app_config.json` 是本地配置文件，默认不会提交到 Git。
 
+如需让建议结合持仓成本和账户仓位，在 `app_config.json` 中填写本地持仓：
+
+```json
+{
+  "portfolio": {
+    "cash": 0,
+    "positions": {
+      "601138": {
+        "quantity": 100,
+        "cost": 50.0
+      }
+    }
+  }
+}
+```
+
+系统不会连接真实券商账户，持仓成本和账户仓位只从本地配置读取。
+
 ## 启动每日定时任务
 
 默认每天 14:50 执行分析并模拟微信推送：
@@ -119,8 +137,21 @@ python main.py --once
 - `stock_zh_index_spot_sina`
 - `stock_zh_index_spot_em`
 - `tool_trade_date_hist_sina`
+- `stock_financial_abstract`
+- `stock_news_em`
+- `stock_research_report_em`
+- `stock_hsgt_fund_flow_summary_em`
+- `stock_hsgt_individual_em`
+- `stock_lhb_stock_detail_date_em`
+- `stock_lhb_stock_detail_em`
+- `stock_individual_fund_flow`
+- `stock_sector_fund_flow_rank`
+- `stock_board_industry_name_em`
+- `stock_zh_a_hist`
 
 指数数据优先使用新浪源，目标指数缺失或接口失败时回退到东方财富源。交易日优先从行情数据解析，解析不到时使用 AkShare 交易日历。
+
+投资建议前会额外抓取财报、新闻、研报、北向资金、龙虎榜、资金流向、行业板块行情、个股历史 K 线，并结合本地配置中的持仓成本和账户仓位。
 
 如果 AkShare 获取失败或关键字段缺失，系统返回 `DATA_ERROR`，不会伪造行情数据。
 

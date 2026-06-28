@@ -7,11 +7,13 @@
   "target_stocks": {
     "601138": {
       "name": "工业富联",
-      "factor": "科技"
+      "factor": "科技",
+      "industry": "消费电子"
     },
     "002475": {
       "name": "立讯精密",
-      "factor": "消费电子"
+      "factor": "消费电子",
+      "industry": "消费电子"
     }
   },
   "index_codes": {
@@ -31,5 +33,24 @@
     "webhook_url": "",
     "timeout_seconds": 10,
     "linux_wechat_target": "文件传输助手"
+  },
+  "portfolio": {
+    "cash": 0,
+    "positions": {
+      "601138": {
+        "quantity": 0,
+        "cost": 0
+      },
+      "002475": {
+        "quantity": 0,
+        "cost": 0
+      }
+    }
+  },
+  "extended_data": {
+    "enabled": true,
+    "history_days": 30,
+    "news_limit": 3,
+    "research_limit": 3
   }
 }
