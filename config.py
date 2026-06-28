@@ -38,8 +38,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "notification": {
         "enabled": False,
+        "channel": "mock",
         "webhook_url": "",
         "timeout_seconds": 10,
+        "linux_wechat_target": "文件传输助手",
     },
 }
 
@@ -86,8 +88,13 @@ STOCK_WEAK_SCORE = float(APP_CONFIG["thresholds"]["stock_weak_score"])
 HARD_DROP_PCT = float(APP_CONFIG["thresholds"]["hard_drop_pct"])
 
 NOTIFY_ENABLED = _env_bool("NOTIFY_ENABLED", bool(APP_CONFIG["notification"]["enabled"]))
+NOTIFY_CHANNEL = os.getenv("NOTIFY_CHANNEL", str(APP_CONFIG["notification"]["channel"]))
 WECHAT_WEBHOOK_URL = os.getenv("WECHAT_WEBHOOK_URL", str(APP_CONFIG["notification"]["webhook_url"]))
 NOTIFY_TIMEOUT_SECONDS = int(APP_CONFIG["notification"]["timeout_seconds"])
+LINUX_WECHAT_TARGET = os.getenv(
+    "LINUX_WECHAT_TARGET",
+    str(APP_CONFIG["notification"]["linux_wechat_target"]),
+)
 
 
 def ensure_runtime_dirs() -> None:

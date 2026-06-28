@@ -50,9 +50,22 @@ python main.py --run-now
 
 ```bash
 export NOTIFY_ENABLED=true
+export NOTIFY_CHANNEL=webhook
 export WECHAT_WEBHOOK_URL="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
 python main.py --once
 ```
+
+如需通过 Ubuntu 本机微信发送给文件传输助手，可安装桌面自动化工具并设置：
+
+```bash
+sudo apt install -y xdotool xclip
+export NOTIFY_ENABLED=true
+export NOTIFY_CHANNEL=linux_wechat_gui
+export LINUX_WECHAT_TARGET="文件传输助手"
+python main.py --once
+```
+
+该方式依赖当前桌面会话中的微信窗口，适合个人提醒试用；运行时需要微信已登录、窗口可见、屏幕未锁定。
 
 ## 输出格式
 

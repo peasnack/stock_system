@@ -27,7 +27,9 @@
   },
   "notification": {
     "enabled": false,
+    "channel": "mock",
     "webhook_url": "",
-    "timeout_seconds": 10
+    "timeout_seconds": 10,
+    "linux_wechat_target": "文件传输助手"
   }
 }
