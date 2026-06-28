@@ -1,4 +1,5 @@
 import logging
+import re
 import shutil
 import subprocess
 import time
@@ -34,22 +35,54 @@ def _run_xdotool(*args: str) -> None:
     subprocess.run(["xdotool", *args], check=True)
 
 
+def _window_area(window_id: str) -> int:
+    result = subprocess.run(
+        ["xdotool", "getwindowgeometry", window_id],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    matched = re.search(r"Geometry:\s+(\d+)x(\d+)", result.stdout)
+    if not matched:
+        return 0
+    width, height = (int(value) for value in matched.groups())
+    return width * height
+
+
+def _click_window_ratio(window_id: str, x_ratio: float, y_ratio: float) -> None:
+    result = subprocess.run(
+        ["xdotool", "getwindowgeometry", window_id],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    matched = re.search(r"Geometry:\s+(\d+)x(\d+)", result.stdout)
+    if not matched:
+        raise subprocess.CalledProcessError(1, ["xdotool", "getwindowgeometry", window_id])
+    width, height = (int(value) for value in matched.groups())
+    _run_xdotool("mousemove", "--window", window_id, str(round(width * x_ratio)), str(round(height * y_ratio)))
+    _run_xdotool("click", "1")
+
+
+def _search_wechat_windows() -> list[str]:
+    result = subprocess.run(
+        ["xdotool", "search", "--onlyvisible", "--class", "wechat"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def _activate_wechat_window() -> bool:
     if not shutil.which("xdotool"):
         logger.error("Linux WeChat GUI notification requires xdotool")
         return False
 
-    search_commands = [
-        ["search", "--onlyvisible", "--class", "wechat"],
-        ["search", "--onlyvisible", "--name", "微信"],
-        ["search", "--onlyvisible", "--name", "WeChat"],
-    ]
-    for command in search_commands:
-        result = subprocess.run(["xdotool", *command], capture_output=True, text=True, check=False)
-        window_ids = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        if not window_ids:
-            continue
-        _run_xdotool("windowactivate", "--sync", window_ids[-1])
+    window_ids = _search_wechat_windows()
+    if window_ids:
+        window_id = max(window_ids, key=_window_area)
+        _run_xdotool("windowactivate", "--sync", window_id)
         time.sleep(0.5)
         return True
 
@@ -57,23 +90,47 @@ def _activate_wechat_window() -> bool:
     return False
 
 
+def _active_wechat_window_id() -> str | None:
+    window_ids = _search_wechat_windows()
+    if not window_ids:
+        return None
+    return max(window_ids, key=_window_area)
+
+
 def _send_linux_wechat_gui_message(message: str, target: str = LINUX_WECHAT_TARGET) -> bool:
     if not _activate_wechat_window():
         return False
 
     try:
-        _run_xdotool("key", "ctrl+f")
+        window_id = _active_wechat_window_id()
+        if window_id is None:
+            logger.error("Linux WeChat GUI notification could not resolve active WeChat window")
+            return False
+
+        _click_window_ratio(window_id, 0.092, 0.059)
         time.sleep(0.3)
         if not _set_clipboard(target):
             return False
+        _run_xdotool("key", "ctrl+a")
         _run_xdotool("key", "ctrl+v")
-        time.sleep(0.5)
-        _run_xdotool("key", "Return")
         time.sleep(0.8)
+
+        _click_window_ratio(window_id, 0.138, 0.130)
+        time.sleep(0.8)
+
+        _click_window_ratio(window_id, 0.092, 0.059)
+        _run_xdotool("key", "ctrl+a")
+        _run_xdotool("key", "BackSpace")
+        time.sleep(0.8)
+        _click_window_ratio(window_id, 0.138, 0.130)
+        time.sleep(2.0)
+
         if not _set_clipboard(message):
             return False
+        _click_window_ratio(window_id, 0.531, 0.915)
+        time.sleep(0.2)
         _run_xdotool("key", "ctrl+v")
-        time.sleep(0.3)
+        time.sleep(0.2)
         _run_xdotool("key", "Return")
     except subprocess.CalledProcessError as exc:
         logger.exception("Linux WeChat GUI notification failed: %s", exc)
