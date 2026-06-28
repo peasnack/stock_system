@@ -82,9 +82,19 @@ def _activate_wechat_window() -> bool:
     window_ids = _search_wechat_windows()
     if window_ids:
         window_id = max(window_ids, key=_window_area)
-        _run_xdotool("windowactivate", "--sync", window_id)
+        _run_xdotool("windowraise", window_id)
+        _run_xdotool("windowfocus", window_id)
         time.sleep(0.5)
-        return True
+        active_window = subprocess.run(
+            ["xdotool", "getactivewindow"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if active_window.stdout.strip() == window_id:
+            return True
+        logger.error("Linux WeChat GUI notification could not focus WeChat window")
+        return False
 
     logger.error("Linux WeChat GUI notification could not find a visible WeChat window")
     return False
