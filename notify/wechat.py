@@ -65,13 +65,19 @@ def _click_window_ratio(window_id: str, x_ratio: float, y_ratio: float) -> None:
 
 
 def _search_wechat_windows() -> list[str]:
-    result = subprocess.run(
-        ["xdotool", "search", "--onlyvisible", "--class", "wechat"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    candidates: list[str] = []
+    for search_args in (
+        ("search", "--onlyvisible", "--name", "^微信$"),
+        ("search", "--onlyvisible", "--class", "wechat"),
+    ):
+        result = subprocess.run(
+            ["xdotool", *search_args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        candidates.extend(line.strip() for line in result.stdout.splitlines() if line.strip())
+    return list(dict.fromkeys(candidates))
 
 
 def _activate_wechat_window() -> bool:
@@ -83,7 +89,7 @@ def _activate_wechat_window() -> bool:
     if window_ids:
         window_id = max(window_ids, key=_window_area)
         _run_xdotool("windowraise", window_id)
-        _run_xdotool("windowfocus", window_id)
+        subprocess.run(["xdotool", "windowfocus", window_id], check=False)
         time.sleep(0.5)
         active_window = subprocess.run(
             ["xdotool", "getactivewindow"],
@@ -125,23 +131,27 @@ def _send_linux_wechat_gui_message(message: str, target: str = LINUX_WECHAT_TARG
         _run_xdotool("key", "ctrl+v")
         time.sleep(0.8)
 
-        _click_window_ratio(window_id, 0.138, 0.130)
-        time.sleep(0.8)
+        _run_xdotool("key", "Return")
+        time.sleep(1.0)
 
         _click_window_ratio(window_id, 0.092, 0.059)
         _run_xdotool("key", "ctrl+a")
         _run_xdotool("key", "BackSpace")
         time.sleep(0.8)
-        _click_window_ratio(window_id, 0.138, 0.130)
-        time.sleep(2.0)
+        _run_xdotool("key", "Return")
+        time.sleep(1.0)
 
         if not _set_clipboard(message):
             return False
         _click_window_ratio(window_id, 0.531, 0.915)
         time.sleep(0.2)
         _run_xdotool("key", "ctrl+v")
-        time.sleep(0.2)
+        time.sleep(0.5)
+        _click_window_ratio(window_id, 0.940, 0.965)
+        time.sleep(0.5)
         _run_xdotool("key", "Return")
+        time.sleep(0.2)
+        _run_xdotool("key", "ctrl+Return")
     except subprocess.CalledProcessError as exc:
         logger.exception("Linux WeChat GUI notification failed: %s", exc)
         return False
