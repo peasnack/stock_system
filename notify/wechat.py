@@ -89,6 +89,7 @@ def _activate_wechat_window() -> bool:
     if window_ids:
         window_id = max(window_ids, key=_window_area)
         _run_xdotool("windowraise", window_id)
+        subprocess.run(["xdotool", "windowactivate", window_id], check=False)
         subprocess.run(["xdotool", "windowfocus", window_id], check=False)
         time.sleep(0.5)
         active_window = subprocess.run(
