@@ -18,6 +18,39 @@ pip install -r requirements.txt
 python main.py --once
 ```
 
+## 常用执行命令
+
+在当前 Ubuntu 桌面已登录微信时，手动执行完整分析并推送到文件传输助手：
+
+```bash
+cd /home/hlw/repos/personal/stock_system
+
+export NOTIFY_ENABLED=true
+export NOTIFY_CHANNEL=linux_wechat_gui
+export LINUX_WECHAT_TARGET="文件传输助手"
+
+.venv/bin/python main.py --once
+```
+
+启动每日 14:50 自动分析并推送到文件传输助手：
+
+```bash
+cd /home/hlw/repos/personal/stock_system
+
+export NOTIFY_ENABLED=true
+export NOTIFY_CHANNEL=linux_wechat_gui
+export LINUX_WECHAT_TARGET="文件传输助手"
+
+.venv/bin/python main.py
+```
+
+执行前可检查桌面自动化工具是否可用：
+
+```bash
+command -v xdotool
+command -v xclip
+```
+
 ## 配置
 
 默认配置在 `config.py`。如需调整股票池、指数、阈值、定时任务或通知参数，可复制示例配置：
