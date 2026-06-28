@@ -2,7 +2,7 @@ import logging
 import re
 import sys
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +73,79 @@ def _normalize_spot_row(row: pd.Series, code_col: str, name_col: str) -> dict[st
     }
 
 
+def _has_required_indices(index_df: pd.DataFrame) -> bool:
+    code_col = _find_col(index_df, ["代码"])
+    codes = set(_code_series(index_df[code_col]))
+    return all(code in codes for code in INDEX_CODES)
+
+
+def _parse_date_value(value: Any) -> str | None:
+    if pd.isna(value):
+        return None
+    text = str(value)
+    patterns = [
+        r"(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})",
+        r"(20\d{2})(\d{2})(\d{2})",
+    ]
+    for pattern in patterns:
+        matched = re.search(pattern, text)
+        if not matched:
+            continue
+        year, month, day = (int(part) for part in matched.groups())
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_trade_date_from_frames(*frames: pd.DataFrame) -> str | None:
+    date_columns = ["日期", "交易日", "时间", "更新时间", "数据日期"]
+    for df in frames:
+        for col in date_columns:
+            if col not in df.columns:
+                continue
+            for value in df[col].dropna().head(20):
+                parsed = _parse_date_value(value)
+                if parsed:
+                    return parsed
+    return None
+
+
+def _fetch_latest_trade_date() -> str:
+    logger.info("Fetching latest trade date by akshare.tool_trade_date_hist_sina")
+    try:
+        trade_dates = ak.tool_trade_date_hist_sina()
+    except Exception as exc:
+        raise DataFetchError(f"DATA_ERROR: cannot determine trade date: {exc}") from exc
+
+    if trade_dates is None or trade_dates.empty:
+        raise DataFetchError("DATA_ERROR: trade date calendar returned empty data")
+
+    date_col = _find_col(trade_dates, ["trade_date", "日期", "交易日"])
+    parsed_dates = []
+    today = date.today()
+    for value in trade_dates[date_col].dropna():
+        parsed = _parse_date_value(value)
+        if parsed is None:
+            continue
+        parsed_date = datetime.fromisoformat(parsed).date()
+        if parsed_date <= today:
+            parsed_dates.append(parsed_date)
+
+    if not parsed_dates:
+        raise DataFetchError("DATA_ERROR: cannot determine latest trade date")
+
+    return max(parsed_dates).isoformat()
+
+
+def resolve_trade_date(stock_df: pd.DataFrame, index_df: pd.DataFrame) -> str:
+    trade_date = _extract_trade_date_from_frames(index_df, stock_df)
+    if trade_date:
+        return trade_date
+    return _fetch_latest_trade_date()
+
+
 def fetch_stock_spot() -> pd.DataFrame:
     logger.info("Fetching A-share spot data by akshare.stock_zh_a_spot_em")
     try:
@@ -86,9 +159,16 @@ def fetch_stock_spot() -> pd.DataFrame:
 
 def fetch_index_spot() -> pd.DataFrame:
     logger.info("Fetching index data by akshare.stock_zh_index_spot_sina")
+    primary_error: Exception | None = None
     try:
         df = ak.stock_zh_index_spot_sina()
+        if df is None or df.empty:
+            raise DataFetchError("stock_zh_index_spot_sina returned empty data")
+        if _has_required_indices(df):
+            return df
+        raise DataFetchError("stock_zh_index_spot_sina missing required indices")
     except Exception as exc:
+        primary_error = exc
         logger.warning("stock_zh_index_spot_sina failed, falling back to stock_zh_index_spot_em: %s", exc)
         try:
             df = ak.stock_zh_index_spot_em()
@@ -99,6 +179,8 @@ def fetch_index_spot() -> pd.DataFrame:
             ) from fallback_exc
     if df is None or df.empty:
         raise DataFetchError("DATA_ERROR: index spot api returned empty data")
+    if not _has_required_indices(df):
+        raise DataFetchError(f"DATA_ERROR: index spot api missing required indices after fallback: {primary_error}")
     return df
 
 
@@ -134,7 +216,7 @@ def get_market_data() -> MarketData:
         raise DataFetchError("DATA_ERROR: invalid total market amount")
 
     return MarketData(
-        trade_date=date.today().isoformat(),
+        trade_date=resolve_trade_date(stock_df, index_df),
         indices=indices,
         stocks=stocks,
         total_amount=total_amount,

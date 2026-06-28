@@ -1,0 +1,33 @@
+{
+  "timezone": "Asia/Shanghai",
+  "job": {
+    "hour": 14,
+    "minute": 50
+  },
+  "target_stocks": {
+    "601138": {
+      "name": "工业富联",
+      "factor": "科技"
+    },
+    "002475": {
+      "name": "立讯精密",
+      "factor": "消费电子"
+    }
+  },
+  "index_codes": {
+    "000001": "上证指数",
+    "399001": "深证成指",
+    "399006": "创业板指"
+  },
+  "thresholds": {
+    "market_amount_change": -0.05,
+    "stock_strong_score": 70,
+    "stock_weak_score": 50,
+    "hard_drop_pct": -5.0
+  },
+  "notification": {
+    "enabled": false,
+    "webhook_url": "",
+    "timeout_seconds": 10
+  }
+}

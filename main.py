@@ -32,6 +32,12 @@ def _amount_yi(amount: float | None) -> str:
     return f"{amount / 100000000:.2f}亿"
 
 
+def _pct_change_text(value: float | None) -> str:
+    if value is None:
+        return "无历史数据"
+    return f"{value}%"
+
+
 def format_report(payload: dict[str, Any]) -> str:
     if payload["status"] == "DATA_ERROR":
         return "\n".join(
@@ -73,16 +79,21 @@ def format_report(payload: dict[str, Any]) -> str:
         for code, decision in decisions.items()
     ]
     reason_lines = []
+    reason_lines.append(f"交易日: {payload['trade_date']}")
+    reason_lines.append("决策优先级: 个股跌幅超过硬止损线时优先降仓，其次判断市场和同因子风险")
     reason_lines.extend(market["reasons"])
     reason_lines.extend(risk["reasons"])
     for code, decision in decisions.items():
-        reason_lines.append(f"{stocks[code]['name']}: {'; '.join(decision['reasons'])}")
+        score_detail = stocks[code].get("score_detail", {})
+        score_text = ", ".join(f"{name}={score}" for name, score in score_detail.items())
+        reason_lines.append(f"{stocks[code]['name']}: {'; '.join(decision['reasons'])}; 评分明细: {score_text}")
 
     return "\n".join(
         [
             "[市场状态]",
             market["state"],
-            f"两市成交额: {_amount_yi(market['total_amount'])}, 较前次: {market['amount_change_pct']}%",
+            f"交易日: {payload['trade_date']}",
+            f"两市成交额: {_amount_yi(market['total_amount'])}, 较前次: {_pct_change_text(market['amount_change_pct'])}",
             "[指数数据]",
             *index_lines,
             "[个股数据]",

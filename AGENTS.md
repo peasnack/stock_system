@@ -23,5 +23,6 @@ This repository contains a Python MVP for an A-share investment decision system.
 
 ## Verification
 
-- Run `python3 -m compileall .` after Python changes.
+- Run `python3 -m compileall main.py config.py core data notify scheduler tests` after Python changes.
+- Run `python3 -m unittest discover -s tests` after logic changes.
 - If dependencies are installed, run `python main.py --once` to verify the full data path.
