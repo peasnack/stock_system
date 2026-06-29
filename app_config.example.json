@@ -52,5 +52,8 @@
     "history_days": 30,
     "news_limit": 3,
     "research_limit": 3
+  },
+  "ai": {
+    "model": "gpt-4o-mini"
   }
 }

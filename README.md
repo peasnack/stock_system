@@ -18,6 +18,12 @@ pip install -r requirements.txt
 python main.py --once
 ```
 
+启用 AI 决策模块但只打印、不推送：
+
+```bash
+python main.py --mode late --ai --dry-run
+```
+
 ## 常用执行命令
 
 在当前 Ubuntu 桌面已登录微信时，手动执行完整分析并推送到文件传输助手：
@@ -29,7 +35,7 @@ export NOTIFY_ENABLED=true
 export NOTIFY_CHANNEL=linux_wechat_gui
 export LINUX_WECHAT_TARGET="文件传输助手"
 
-.venv/bin/python main.py --once
+.venv/bin/python main.py --once --mode late --ai --notify
 ```
 
 启动每日 14:50 自动分析并推送到文件传输助手：
@@ -41,7 +47,7 @@ export NOTIFY_ENABLED=true
 export NOTIFY_CHANNEL=linux_wechat_gui
 export LINUX_WECHAT_TARGET="文件传输助手"
 
-.venv/bin/python main.py
+.venv/bin/python main.py --mode late --ai
 ```
 
 执行前可检查桌面自动化工具是否可用：
@@ -97,6 +103,14 @@ python main.py --run-now
 
 系统默认不发送真实 webhook，只在终端模拟输出消息。
 
+如果 14:50 没有收到微信，优先检查：
+
+- 定时进程是否仍在运行，日志在 `logs/stock_system.log`
+- `NOTIFY_ENABLED=true`
+- `NOTIFY_CHANNEL=linux_wechat_gui` 或 `webhook`
+- Linux 微信方式需要 `xdotool`、`xclip`，且微信已登录、窗口可见、屏幕未锁定
+- 手动执行 `python main.py --once --mode late --notify` 验证通知链路
+
 如需启用企业微信机器人 webhook，可设置：
 
 ```bash
@@ -105,6 +119,23 @@ export NOTIFY_CHANNEL=webhook
 export WECHAT_WEBHOOK_URL="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
 python main.py --once
 ```
+
+## AI 决策模块 MVP2
+
+AI 模块会先保存标准化上下文，再调用 OpenAI，最后由本地二次风控修正 AI 输出。缺少 `OPENAI_API_KEY`、SDK 未安装或 API 调用失败时，系统仍会输出并推送本地规则结果，结论标注 `AI_ERROR，按本地风控执行`。
+
+```bash
+export OPENAI_API_KEY="..."
+export OPENAI_MODEL="gpt-4o-mini"
+python main.py --mode late --ai --dry-run
+```
+
+每次运行会保存：
+
+- `data/context/YYYY-MM-DD_HHMM_market_context.json`
+- `data/decision/YYYY-MM-DD_HHMM_ai_raw.json`
+- `data/decision/YYYY-MM-DD_HHMM_decision_guarded.json`
+- `data/reports/YYYY-MM-DD_HHMM_report.md`
 
 如需通过 Ubuntu 本机微信发送给文件传输助手，可安装桌面自动化工具并设置：
 
@@ -160,5 +191,5 @@ python main.py --once
 ```bash
 python3 -m compileall main.py config.py core data notify scheduler tests
 python3 -m unittest discover -s tests
-python main.py --once
+python main.py --mode late --ai --dry-run
 ```

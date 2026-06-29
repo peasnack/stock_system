@@ -8,6 +8,9 @@ BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "logs"
 DB_PATH = BASE_DIR / "data" / "stock_system.db"
 APP_CONFIG_PATH = BASE_DIR / "app_config.json"
+CONTEXT_DIR = BASE_DIR / "data" / "context"
+DECISION_DIR = BASE_DIR / "data" / "decision"
+REPORT_DIR = BASE_DIR / "data" / "reports"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "timezone": "Asia/Shanghai",
@@ -63,6 +66,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "history_days": 30,
         "news_limit": 3,
         "research_limit": 3,
+    },
+    "ai": {
+        "model": "gpt-4o-mini",
     },
 }
 
@@ -121,8 +127,12 @@ EXTENDED_DATA_ENABLED = _env_bool("EXTENDED_DATA_ENABLED", bool(APP_CONFIG["exte
 HISTORY_DAYS = int(APP_CONFIG["extended_data"]["history_days"])
 NEWS_LIMIT = int(APP_CONFIG["extended_data"]["news_limit"])
 RESEARCH_LIMIT = int(APP_CONFIG["extended_data"]["research_limit"])
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", str(APP_CONFIG["ai"]["model"]))
 
 
 def ensure_runtime_dirs() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
+    DECISION_DIR.mkdir(parents=True, exist_ok=True)
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)

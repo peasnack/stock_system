@@ -1,9 +1,11 @@
 import argparse
+import json
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from config import LOG_DIR, ensure_runtime_dirs
+from config import CONTEXT_DIR, DECISION_DIR, HARD_DROP_PCT, LOG_DIR, REPORT_DIR, ensure_runtime_dirs
 from config import EXTENDED_DATA_ENABLED
 from core.extended_fetch import fetch_extended_data
 from core.fetch import DataFetchError, get_market_data
@@ -14,6 +16,9 @@ from core.strategy import make_decisions
 from data.storage import get_previous_market_amount, init_db, save_market_amount, save_run
 from notify.wechat import send_wechat_message
 from scheduler.job import start_scheduler
+from src.ai.openai_client import call_openai_decision
+from src.reports.formatter import format_decision_markdown
+from src.risk.post_guard import apply_post_guard
 
 
 def setup_logging() -> None:
@@ -177,10 +182,177 @@ def format_report(payload: dict[str, Any]) -> str:
     )
 
 
-def run_analysis() -> dict[str, Any]:
+def _artifact_stamp(run_at: datetime) -> str:
+    return run_at.strftime("%Y-%m-%d_%H%M")
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+
+
+def _write_text(path: Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8")
+
+
+def _collect_data_gaps(payload: dict[str, Any]) -> list[str]:
+    if payload.get("status") != "OK":
+        return [str(payload.get("error", "DATA_ERROR"))]
+    gaps: list[str] = []
+    extended = payload.get("extended")
+    if not extended:
+        gaps.append("extended_data_missing")
+        return gaps
+    for code, item in (extended.get("stocks") or {}).items():
+        if not item.get("news"):
+            gaps.append(f"{code}_news_missing")
+        if not item.get("research"):
+            gaps.append(f"{code}_research_missing")
+        if not item.get("history", {}).get("latest"):
+            gaps.append(f"{code}_history_missing")
+    return gaps
+
+
+def _build_local_risk_precheck(payload: dict[str, Any], data_gaps: list[str]) -> dict[str, Any]:
+    if payload.get("status") != "OK":
+        return {
+            "allow_buy": False,
+            "allow_switch": False,
+            "hard_stop_triggered": False,
+            "core_logic_invalidated": False,
+            "data_complete": False,
+            "reasons": [str(payload.get("error", "DATA_ERROR"))],
+        }
+
+    market = payload.get("market") or {}
+    risk = payload.get("risk") or {}
+    data_complete = not data_gaps
+    allow_buy = data_complete and market.get("state") != "WEAK" and bool(risk.get("allow_add", False))
+    reasons: list[str] = []
+    if not data_complete:
+        reasons.append("存在数据缺口，禁止买入、加仓、换股")
+    if market.get("state") == "WEAK":
+        reasons.append("弱市场环境禁止买入或加仓")
+    if not risk.get("allow_add", False):
+        reasons.append("同因子风险禁止买入或加仓")
+
+    return {
+        "allow_buy": allow_buy,
+        "allow_switch": False,
+        "hard_stop_triggered": False,
+        "core_logic_invalidated": False,
+        "data_complete": data_complete,
+        "hard_drop_pct": HARD_DROP_PCT,
+        "reasons": reasons or ["本地预检未发现硬性禁止买入条件，但 MVP2 默认禁止换股"],
+    }
+
+
+def _market_context(payload: dict[str, Any], mode: str) -> dict[str, Any]:
+    data_gaps = _collect_data_gaps(payload)
+    context = {
+        "mode": mode,
+        "status": payload.get("status"),
+        "run_at": payload.get("run_at"),
+        "trade_date": payload.get("trade_date"),
+        "market": payload.get("market"),
+        "indices": payload.get("indices"),
+        "stocks": payload.get("stocks"),
+        "extended": payload.get("extended"),
+        "risk": payload.get("risk"),
+        "local_decisions": payload.get("decisions"),
+        "data_gaps": data_gaps,
+    }
+    context["local_risk_precheck"] = _build_local_risk_precheck(payload, data_gaps)
+    return context
+
+
+def _system_state(payload: dict[str, Any]) -> str:
+    if payload.get("status") != "OK":
+        return "S4"
+    risk_state = (payload.get("risk") or {}).get("state")
+    market_state = (payload.get("market") or {}).get("state")
+    if risk_state == "RISK_ON" or market_state == "WEAK":
+        return "S3"
+    if market_state == "STRONG":
+        return "S1"
+    return "S2"
+
+
+def _local_decision_payload(payload: dict[str, Any], context: dict[str, Any], ai_error: str | None = None) -> dict[str, Any]:
+    stocks = payload.get("stocks") or {}
+    decisions = []
+    for code, decision in (payload.get("decisions") or {}).items():
+        stock = stocks.get(code, {})
+        decisions.append(
+            {
+                "code": code,
+                "name": stock.get("name", code),
+                "action": decision.get("action", "NO_TRADE"),
+                "hands": 0,
+                "condition": "本地规则",
+                "reason": "；".join(decision.get("reasons") or []),
+            }
+        )
+    if not decisions:
+        decisions = [
+            {
+                "code": "",
+                "name": "全局",
+                "action": "NO_TRADE",
+                "hands": 0,
+                "condition": "DATA_ERROR",
+                "reason": str(payload.get("error", "DATA_ERROR")),
+            }
+        ]
+
+    precheck = context["local_risk_precheck"]
+    conclusion = "AI_ERROR，按本地风控执行" if ai_error else "按本地规则执行"
+    return {
+        "system_state": _system_state(payload),
+        "portfolio_conclusion": conclusion,
+        "allow_buy": bool(precheck.get("allow_buy", False)),
+        "allow_switch": bool(precheck.get("allow_switch", False)),
+        "hard_stop_triggered": bool(precheck.get("hard_stop_triggered", False)),
+        "same_factor_risk": (payload.get("risk") or {}).get("state") == "RISK_ON",
+        "decisions": decisions,
+        "data_gaps": context.get("data_gaps") or [],
+        "wechat_summary": conclusion,
+    }
+
+
+def _save_ai_artifacts(
+    *,
+    run_at: datetime,
+    context: dict[str, Any],
+    ai_raw: dict[str, Any],
+    guarded: dict[str, Any],
+    report: str,
+) -> dict[str, str]:
+    stamp = _artifact_stamp(run_at)
+    paths = {
+        "context": CONTEXT_DIR / f"{stamp}_market_context.json",
+        "ai_raw": DECISION_DIR / f"{stamp}_ai_raw.json",
+        "guarded": DECISION_DIR / f"{stamp}_decision_guarded.json",
+        "report": REPORT_DIR / f"{stamp}_report.md",
+    }
+    _write_json(paths["context"], context)
+    _write_json(paths["ai_raw"], ai_raw)
+    _write_json(paths["guarded"], guarded)
+    _write_text(paths["report"], report)
+    return {name: str(path) for name, path in paths.items()}
+
+
+def _notify_or_print(report: str, *, notify: bool, dry_run: bool) -> bool:
+    if dry_run or not notify:
+        print(report)
+        return True
+    return send_wechat_message(report)
+
+
+def run_analysis(mode: str = "late", use_ai: bool = False, notify: bool = True, dry_run: bool = False) -> dict[str, Any]:
     logger = logging.getLogger(__name__)
     init_db()
     logger.info("Stock analysis run started")
+    run_at = datetime.now()
 
     try:
         market_data = get_market_data()
@@ -200,7 +372,7 @@ def run_analysis() -> dict[str, Any]:
 
         payload = {
             "status": "OK",
-            "run_at": datetime.now().isoformat(timespec="seconds"),
+            "run_at": run_at.isoformat(timespec="seconds"),
             "trade_date": market_data.trade_date,
             "market": market,
             "indices": market_data.indices,
@@ -220,7 +392,32 @@ def run_analysis() -> dict[str, Any]:
             total_amount=market_data.total_amount,
             payload=payload,
         )
-        send_wechat_message(report)
+        context = _market_context(payload, mode)
+        if use_ai:
+            ai_raw = call_openai_decision(context)
+            ai_decision = (
+                ai_raw["decision"]
+                if ai_raw.get("status") == "OK" and isinstance(ai_raw.get("decision"), dict)
+                else _local_decision_payload(payload, context, str(ai_raw.get("error", "AI_ERROR")))
+            )
+        else:
+            ai_raw = {"status": "SKIPPED", "reason": "AI disabled"}
+            ai_decision = _local_decision_payload(payload, context)
+        guarded = apply_post_guard(ai_decision, context["local_risk_precheck"])
+        decision_report = format_decision_markdown(guarded, context)
+        artifact_paths = _save_ai_artifacts(
+            run_at=run_at,
+            context=context,
+            ai_raw=ai_raw,
+            guarded=guarded,
+            report=decision_report,
+        )
+        payload["market_context"] = context
+        payload["ai_raw"] = ai_raw
+        payload["decision_guarded"] = guarded
+        payload["decision_report"] = decision_report
+        payload["artifact_paths"] = artifact_paths
+        _notify_or_print(decision_report, notify=notify, dry_run=dry_run)
         logger.info("Stock analysis run completed")
         return payload
 
@@ -228,7 +425,7 @@ def run_analysis() -> dict[str, Any]:
         logger.exception("Data fetch failed")
         payload = {
             "status": "DATA_ERROR",
-            "run_at": datetime.now().isoformat(timespec="seconds"),
+            "run_at": run_at.isoformat(timespec="seconds"),
             "error": str(exc),
         }
         report = format_report(payload)
@@ -240,13 +437,31 @@ def run_analysis() -> dict[str, Any]:
             total_amount=None,
             payload=payload,
         )
-        send_wechat_message(report)
+        context = _market_context(payload, mode)
+        ai_raw = {"status": "AI_ERROR", "error": "AI_ERROR: skipped because local data fetch failed"}
+        guarded = apply_post_guard(
+            _local_decision_payload(payload, context, "AI_ERROR: skipped because local data fetch failed"),
+            context["local_risk_precheck"],
+        )
+        decision_report = format_decision_markdown(guarded, context)
+        payload["market_context"] = context
+        payload["ai_raw"] = ai_raw
+        payload["decision_guarded"] = guarded
+        payload["decision_report"] = decision_report
+        payload["artifact_paths"] = _save_ai_artifacts(
+            run_at=run_at,
+            context=context,
+            ai_raw=ai_raw,
+            guarded=guarded,
+            report=decision_report,
+        )
+        _notify_or_print(decision_report, notify=notify, dry_run=dry_run)
         return payload
     except Exception as exc:
         logger.exception("Unexpected analysis error")
         payload = {
             "status": "DATA_ERROR",
-            "run_at": datetime.now().isoformat(timespec="seconds"),
+            "run_at": run_at.isoformat(timespec="seconds"),
             "error": f"DATA_ERROR: unexpected error: {exc}",
         }
         report = format_report(payload)
@@ -258,7 +473,25 @@ def run_analysis() -> dict[str, Any]:
             total_amount=None,
             payload=payload,
         )
-        send_wechat_message(report)
+        context = _market_context(payload, mode)
+        ai_raw = {"status": "AI_ERROR", "error": "AI_ERROR: skipped because local analysis failed"}
+        guarded = apply_post_guard(
+            _local_decision_payload(payload, context, "AI_ERROR: skipped because local analysis failed"),
+            context["local_risk_precheck"],
+        )
+        decision_report = format_decision_markdown(guarded, context)
+        payload["market_context"] = context
+        payload["ai_raw"] = ai_raw
+        payload["decision_guarded"] = guarded
+        payload["decision_report"] = decision_report
+        payload["artifact_paths"] = _save_ai_artifacts(
+            run_at=run_at,
+            context=context,
+            ai_raw=ai_raw,
+            guarded=guarded,
+            report=decision_report,
+        )
+        _notify_or_print(decision_report, notify=notify, dry_run=dry_run)
         return payload
 
 
@@ -266,21 +499,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="A-share investment decision system MVP")
     parser.add_argument("--once", action="store_true", help="run analysis once and exit")
     parser.add_argument("--run-now", action="store_true", help="run once before starting scheduler")
+    parser.add_argument("--mode", choices=["late", "close", "noon"], default="late", help="analysis mode")
+    parser.add_argument("--ai", action="store_true", help="call OpenAI decision module")
+    parser.add_argument("--notify", action="store_true", help="send notification")
+    parser.add_argument("--dry-run", action="store_true", help="print report without notification")
     args = parser.parse_args()
 
     setup_logging()
     ensure_runtime_dirs()
     init_db()
 
-    if args.once:
-        payload = run_analysis()
-        print(payload["report"])
+    if args.once or args.dry_run:
+        payload = run_analysis(mode=args.mode, use_ai=args.ai, notify=args.notify or not args.dry_run, dry_run=args.dry_run)
+        if not args.dry_run:
+            print(payload.get("decision_report") or payload["report"])
         return
 
     if args.run_now:
-        run_analysis()
+        run_analysis(mode=args.mode, use_ai=args.ai, notify=args.notify or not args.dry_run, dry_run=args.dry_run)
 
-    start_scheduler(run_analysis)
+    start_scheduler(lambda: run_analysis(mode=args.mode, use_ai=args.ai, notify=True, dry_run=False))
 
 
 if __name__ == "__main__":

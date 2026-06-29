@@ -37,7 +37,7 @@ class ResolveTradeDateTest(unittest.TestCase):
                 "trade_date": [
                     "2026-06-25",
                     "2026-06-26",
-                    "2026-06-29",
+                    "2999-06-29",
                 ]
             }
         )

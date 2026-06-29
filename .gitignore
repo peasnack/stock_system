@@ -3,5 +3,11 @@ __pycache__/
 *.pyc
 logs/*.log
 data/*.db
+data/context/*
+data/decision/*
+data/reports/*
+!data/context/.gitkeep
+!data/decision/.gitkeep
+!data/reports/.gitkeep
 .idea/
 app_config.json
