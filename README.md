@@ -143,6 +143,18 @@ python main.py --mode late --ai --dry-run
 - `data/decision/YYYY-MM-DD_HHMM_decision_guarded.json`
 - `data/reports/YYYY-MM-DD_HHMM_report.md`
 
+如需把最新报告交给 Codex 复盘：
+
+```bash
+scripts/codex_latest_report.sh
+```
+
+只打印最新报告、手动贴到当前 Codex 对话：
+
+```bash
+scripts/codex_latest_report.sh --print
+```
+
 如需通过 Ubuntu 本机微信发送给文件传输助手，可安装桌面自动化工具并设置：
 
 ```bash
