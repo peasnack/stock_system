@@ -18,6 +18,7 @@ from config import (
     TARGET_STOCKS,
 )
 from core.fetch import DataFetchError
+from core.network import akshare_network_env
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +162,10 @@ def fetch_extended_data(stocks: dict[str, dict[str, Any]], trade_date: str) -> d
     start_date = (datetime.strptime(trade_date, "%Y-%m-%d") - timedelta(days=HISTORY_DAYS * 2)).strftime("%Y%m%d")
 
     try:
-        northbound_flow = ak.stock_hsgt_fund_flow_summary_em()
-        industry_rank = ak.stock_board_industry_name_em()
-        industry_fund_rank = ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="行业资金流")
+        with akshare_network_env():
+            northbound_flow = ak.stock_hsgt_fund_flow_summary_em()
+            industry_rank = ak.stock_board_industry_name_em()
+            industry_fund_rank = ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="行业资金流")
     except Exception as exc:
         raise DataFetchError(f"DATA_ERROR: extended market data fetch failed: {exc}") from exc
 
@@ -182,19 +184,20 @@ def fetch_extended_data(stocks: dict[str, dict[str, Any]], trade_date: str) -> d
         meta = TARGET_STOCKS.get(code, {})
         industry = meta.get("industry")
         try:
-            financial = ak.stock_financial_abstract(symbol=code)
-            news = ak.stock_news_em(symbol=code)
-            research = ak.stock_research_report_em(symbol=code)
-            northbound_holding = ak.stock_hsgt_individual_em(symbol=code)
-            fund_flow = ak.stock_individual_fund_flow(stock=code, market=_market_for_code(code))
-            history = ak.stock_zh_a_hist(
-                symbol=code,
-                period="daily",
-                start_date=start_date,
-                end_date=end_date,
-                adjust="qfq",
-            )
-            lhb = _fetch_lhb(code)
+            with akshare_network_env():
+                financial = ak.stock_financial_abstract(symbol=code)
+                news = ak.stock_news_em(symbol=code)
+                research = ak.stock_research_report_em(symbol=code)
+                northbound_holding = ak.stock_hsgt_individual_em(symbol=code)
+                fund_flow = ak.stock_individual_fund_flow(stock=code, market=_market_for_code(code))
+                history = ak.stock_zh_a_hist(
+                    symbol=code,
+                    period="daily",
+                    start_date=start_date,
+                    end_date=end_date,
+                    adjust="qfq",
+                )
+                lhb = _fetch_lhb(code)
         except Exception as exc:
             raise DataFetchError(f"DATA_ERROR: extended stock data fetch failed for {code}: {exc}") from exc
 

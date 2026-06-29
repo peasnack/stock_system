@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -194,9 +195,17 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _public_error(error: Any, limit: int = 260) -> str:
+    text = str(error)
+    text = re.sub(r"https?://\S+", "[url]", text)
+    text = re.sub(r"/api/\S+", "/api/[query]", text)
+    text = " ".join(text.split())
+    return text if len(text) <= limit else f"{text[:limit]}..."
+
+
 def _collect_data_gaps(payload: dict[str, Any]) -> list[str]:
     if payload.get("status") != "OK":
-        return [str(payload.get("error", "DATA_ERROR"))]
+        return [_public_error(payload.get("error", "DATA_ERROR"))]
     gaps: list[str] = []
     extended = payload.get("extended")
     if not extended:
@@ -300,7 +309,7 @@ def _local_decision_payload(payload: dict[str, Any], context: dict[str, Any], ai
                 "action": "NO_TRADE",
                 "hands": 0,
                 "condition": "DATA_ERROR",
-                "reason": str(payload.get("error", "DATA_ERROR")),
+                "reason": _public_error(payload.get("error", "DATA_ERROR")),
             }
         ]
 

@@ -111,6 +111,12 @@ python main.py --run-now
 - Linux 微信方式需要 `xdotool`、`xclip`，且微信已登录、窗口可见、屏幕未锁定
 - 手动执行 `python main.py --once --mode late --notify` 验证通知链路
 
+AkShare 行情抓取默认临时绕过本机代理，避免东方财富接口被本地代理断开。若确实需要 AkShare 也走代理，可设置：
+
+```bash
+export AKSHARE_BYPASS_PROXY=false
+```
+
 如需启用企业微信机器人 webhook，可设置：
 
 ```bash

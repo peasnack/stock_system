@@ -12,6 +12,7 @@ import akshare as ak
 import pandas as pd
 
 from config import INDEX_CODES, TARGET_STOCKS
+from core.network import akshare_network_env
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,8 @@ def _extract_trade_date_from_frames(*frames: pd.DataFrame) -> str | None:
 def _fetch_latest_trade_date() -> str:
     logger.info("Fetching latest trade date by akshare.tool_trade_date_hist_sina")
     try:
-        trade_dates = ak.tool_trade_date_hist_sina()
+        with akshare_network_env():
+            trade_dates = ak.tool_trade_date_hist_sina()
     except Exception as exc:
         raise DataFetchError(f"DATA_ERROR: cannot determine trade date: {exc}") from exc
 
@@ -149,7 +151,8 @@ def resolve_trade_date(stock_df: pd.DataFrame, index_df: pd.DataFrame) -> str:
 def fetch_stock_spot() -> pd.DataFrame:
     logger.info("Fetching A-share spot data by akshare.stock_zh_a_spot_em")
     try:
-        df = ak.stock_zh_a_spot_em()
+        with akshare_network_env():
+            df = ak.stock_zh_a_spot_em()
     except Exception as exc:
         raise DataFetchError(f"DATA_ERROR: stock_zh_a_spot_em failed: {exc}") from exc
     if df is None or df.empty:
@@ -161,7 +164,8 @@ def fetch_index_spot() -> pd.DataFrame:
     logger.info("Fetching index data by akshare.stock_zh_index_spot_sina")
     primary_error: Exception | None = None
     try:
-        df = ak.stock_zh_index_spot_sina()
+        with akshare_network_env():
+            df = ak.stock_zh_index_spot_sina()
         if df is None or df.empty:
             raise DataFetchError("stock_zh_index_spot_sina returned empty data")
         if _has_required_indices(df):
@@ -171,7 +175,8 @@ def fetch_index_spot() -> pd.DataFrame:
         primary_error = exc
         logger.warning("stock_zh_index_spot_sina failed, falling back to stock_zh_index_spot_em: %s", exc)
         try:
-            df = ak.stock_zh_index_spot_em()
+            with akshare_network_env():
+                df = ak.stock_zh_index_spot_em()
         except Exception as fallback_exc:
             raise DataFetchError(
                 f"DATA_ERROR: stock_zh_index_spot_sina and stock_zh_index_spot_em failed: "

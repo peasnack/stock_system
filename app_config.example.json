@@ -53,6 +53,9 @@
     "news_limit": 3,
     "research_limit": 3
   },
+  "data_fetch": {
+    "bypass_proxy": true
+  },
   "ai": {
     "model": "gpt-4o-mini"
   }

@@ -67,6 +67,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "news_limit": 3,
         "research_limit": 3,
     },
+    "data_fetch": {
+        "bypass_proxy": True,
+    },
     "ai": {
         "model": "gpt-4o-mini",
     },
@@ -127,6 +130,7 @@ EXTENDED_DATA_ENABLED = _env_bool("EXTENDED_DATA_ENABLED", bool(APP_CONFIG["exte
 HISTORY_DAYS = int(APP_CONFIG["extended_data"]["history_days"])
 NEWS_LIMIT = int(APP_CONFIG["extended_data"]["news_limit"])
 RESEARCH_LIMIT = int(APP_CONFIG["extended_data"]["research_limit"])
+AKSHARE_BYPASS_PROXY = _env_bool("AKSHARE_BYPASS_PROXY", bool(APP_CONFIG["data_fetch"]["bypass_proxy"]))
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", str(APP_CONFIG["ai"]["model"]))
 
 
